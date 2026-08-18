@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Black Hole</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, sans-serif;
+    }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255,255,255,0.55);
+      font-size: 13px;
+      pointer-events: none;
+      text-shadow: 0 0 10px #000;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Drag to orbit • Scroll to zoom</div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+    scene.fog = new THREE.FogExp2(0x000005, 0.0018);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2500);
+    camera.position.set(0, 22, 52);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.45;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.045;
+    controls.minDistance = 18;
+    controls.maxDistance = 140;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.35;
+
+    const horizonGeo = new THREE.SphereGeometry(8, 96, 96);
+    const horizonMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const eventHorizon = new THREE.Mesh(horizonGeo, horizonMat);
+    scene.add(eventHorizon);
+
+    const glowLayers = [
+      { radius: 8.35, color: 0x1a0033, opacity: 0.55 },
+      { radius: 8.9,  color: 0x330066, opacity: 0.28 },
+      { radius: 9.8,  color: 0x220044, opacity: 0.15 },
+      { radius: 11.5, color: 0x110022, opacity: 0.08 }
+    ];
+
+    glowLayers.forEach(layer => {
+      const geo = new THREE.SphereGeometry(layer.radius, 48, 48);
+      const mat = new THREE.MeshBasicMaterial({
+        color: layer.color,
+        transparent: true,
+        opacity: layer.opacity,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      scene.add(mesh);
+    });
+
+    const diskParticleCount = 28000;
+    const diskPositions = new Float32Array(diskParticleCount * 3);
+    const diskColors = new Float32Array(diskParticleCount * 3);
+    const diskSizes = new Float32Array(diskParticleCount);
+    const diskSpeeds = new Float32Array(diskParticleCount);
+    const diskRadii = new Float32Array(diskParticleCount);
+    const diskAngles = new Float32Array(diskParticleCount);
+
+    const colorHot = new THREE.Color(0xffeeaa);
+    const colorCore = new THREE.Color(0xff6622);
+    const colorMid = new THREE.Color(0xff2200);
+    const colorOuter = new THREE.Color(0x440022);
+    const colorPhoton = new THREE.Color(0x88aaff);
+
+    for (let i = 0; i < diskParticleCount; i++) {
+      const i3 = i * 3;
+      const t = Math.pow(Math.random(), 0.55);
+      const radius = 9.2 + t * 32;
+      const angle = Math.random() * Math.PI * 2;
+      const height = (Math.random() - 0.5) * (1.2 + radius * 0.055) * (1 - t * 0.4);
+
+      diskRadii[i] = radius;
+      diskAngles[i] = angle;
+      diskSpeeds[i] = 0.35 + (1 - t) * 1.8 + Math.random() * 0.4;
+
+      diskPositions[i3] = Math.cos(angle) * radius;
+      diskPositions[i3 + 1] = height;
+      diskPositions[i3 + 2] = Math.sin(angle) * radius;
+
+      let col;
+      if (radius < 11.5) {
+        col = colorHot.clone().lerp(colorPhoton, Math.random() * 0.6);
+      } else if (radius < 16) {
+        col = colorCore.clone().lerp(colorHot, 0.4 + Math.random() * 0.4);
+      } else if (radius < 24) {
+        col = colorMid.clone().lerp(colorCore, Math.random() * 0.5);
+      } else {
+        col = colorOuter.clone().lerp(colorMid, Math.random() * 0.6);
+      }
+
+      if (Math.random() > 0.92) {
+        col.setHSL(0.6 + Math.random() * 0.15, 0.9, 0.7);
+      }
+
+      diskColors[i3] = col.r;
+      diskColors[i3 + 1] = col.g;
+      diskColors[i3 + 2] = col.b;
+      diskSizes[i] = (1.15 - t) * 3.4 + 0.7 + Math.random() * 1.6;
+    }
+
+    const diskGeo = new THREE.BufferGeometry();
+    diskGeo.setAttribute('position', new THREE.BufferAttribute(diskPositions, 3));
+    diskGeo.setAttribute('color', new THREE.BufferAttribute(diskColors, 3));
+    diskGeo.setAttribute('size', new THREE.BufferAttribute(diskSizes, 1));
+
+    const diskMat = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        pointTexture: { value: createGlowTexture() }
+      },
+      vertexShader: `
+        attribute float size;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vAlpha;
+        uniform float time;
+
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          float dist = length(mvPosition.xyz);
+          gl_PointSize = size * (320.0 / max(dist, 1.0));
+          gl_Position = projectionMatrix * mvPosition;
+          float r = length(position.xz);
+          vAlpha = smoothstep(42.0, 10.0, r) * (0.7 + 0.3 * sin(time * 2.0 + r * 0.3));
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D pointTexture;
+        varying vec3 vColor;
+        varying float vAlpha;
+
+        void main() {
+          vec4 tex = texture2D(pointTexture, gl_PointCoord);
+          if (tex.a < 0.05) discard;
+          float dist = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = smoothstep(1.0, 0.15, dist) * tex.a * vAlpha;
+          vec3 finalColor = vColor * (1.6 + (1.0 - dist) * 1.8);
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true
+    });
+
+    const accretionDisk = new THREE.Points(diskGeo, diskMat);
+    scene.add(accretionDisk);
+
+    const stretchCount = 9000;
+    const stretchPos = new Float32Array(stretchCount * 3);
+    const stretchCol = new Float32Array(stretchCount * 3);
+    const stretchSize = new Float32Array(stretchCount);
+    const stretchLife = new Float32Array(stretchCount);
+    const stretchSpeed = new Float32Array(stretchCount);
+    const stretchAngle = new Float32Array(stretchCount);
+    const stretchRadius = new Float32Array(stretchCount);
+
+    for (let i = 0; i < stretchCount; i++) {
+      resetStretch(i);
+    }
+
+    function resetStretch(i) {
+      const r = 10 + Math.random() * 18;
+      const a = Math.random() * Math.PI * 2;
+      stretchRadius[i] = r;
+      stretchAngle[i] = a;
+      stretchLife[i] = Math.random();
+      stretchSpeed[i] = 0.6 + Math.random() * 1.8;
+      stretchPos[i * 3] = Math.cos(a) * r;
+      stretchPos[i * 3 + 1] = (Math.random() - 0.5) * 2.5;
+      stretchPos[i * 3 + 2] = Math.sin(a) * r;
+
+      const hue = 0.05 + Math.random() * 0.12;
+      const col = new THREE.Color().setHSL(hue, 0.95, 0.65 + Math.random() * 0.25);
+      if (Math.random() > 0.75) col.setHSL(0.58 + Math.random() * 0.12, 0.9, 0.7);
+
+      stretchCol[i * 3] = col.r;
+      stretchCol[i * 3 + 1] = col.g;
+      stretchCol[i * 3 + 2] = col.b;
+      stretchSize[i] = 1.5 + Math.random() * 3.5;
+    }
+
+    const stretchGeo = new THREE.BufferGeometry();
+    stretchGeo.setAttribute('position', new THREE.BufferAttribute(stretchPos, 3));
+    stretchGeo.setAttribute('color', new THREE.BufferAttribute(stretchCol, 3));
+    stretchGeo.setAttribute('size', new THREE.BufferAttribute(stretchSize, 1));
+
+    const stretchMat = new THREE.ShaderMaterial({
+      uniforms: {
+        time: { value: 0 },
+        pointTexture: { value: createGlowTexture() }
+      },
+      vertexShader: `
+        attribute float size;
+        attribute vec3 color;
+        varying vec3 vColor;
+        varying float vAlpha;
+        uniform float time;
+
+        void main() {
+          vColor = color;
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          float dist = length(mvPosition.xyz);
+          gl_PointSize = size * (380.0 / max(dist, 1.0));
+          gl_Position = projectionMatrix * mvPosition;
+          float r = length(position.xz);
+          vAlpha = smoothstep(28.0, 8.5, r) * (0.5 + 0.5 * sin(time * 3.0 + position.x * 0.4));
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D pointTexture;
+        varying vec3 vColor;
+        varying float vAlpha;
+
+        void main() {
+          vec4 tex = texture2D(pointTexture, gl_PointCoord);
+          if (tex.a < 0.04) discard;
+          float dist = length(gl_PointCoord - 0.5) * 2.0;
+          float alpha = pow(smoothstep(1.0, 0.0, dist), 1.4) * tex.a * vAlpha;
+          vec3 finalColor = vColor * (2.2 + (1.0 - dist) * 3.5);
+          gl_FragColor = vec4(finalColor, alpha);
+        }
+      `,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexColors: true
+    });
+
+    const stretchParticles = new THREE.Points(stretchGeo, stretchMat);
+    scene.add(stretchParticles);
+
+    const ringGeo = new THREE.RingGeometry(8.5, 11.8, 180);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xffaa66,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const photonRing = new THREE.Mesh(ringGeo, ringMat);
+    photonRing.rotation.x = Math.PI / 2;
+    scene.add(photonRing);
+
+    const ring2Geo = new THREE.RingGeometry(9.0, 10.6, 128);
+    const ring2Mat = new THREE.MeshBasicMaterial({
+      color: 0xaaccff,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const photonRing2 = new THREE.Mesh(ring2Geo, ring2Mat);
+    photonRing2.rotation.x = Math.PI / 2;
+    scene.add(photonRing2);
+
+    const starCount = 5500;
+    const starPos = new Float32Array(starCount * 3);
+    const starCol = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount; i++) {
+      starPos[i * 3] = (Math.random() - 0.5) * 2200;
+      starPos[i * 3 + 1] = (Math.random() - 0.5) * 2200;
+      starPos[i * 3 + 2] = (Math.random() - 0.5) * 2200;
+      const c = new THREE.Color().setHSL(Math.random() * 0.1 + 0.55, 0.3, 0.7 + Math.random() * 0.3);
+      starCol[i * 3] = c.r;
+      starCol[i * 3 + 1] = c.g;
+      starCol[i * 3 + 2] = c.b;
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    starGeo.setAttribute('color', new THREE.BufferAttribute(starCol, 3));
+    const starMat = new THREE.PointsMaterial({
+      size: 1.6,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.9,
+      vertexColors: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+
+    function createGlowTexture() {
+      const size = 128;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      g.addColorStop(0.0, 'rgba(255,255,255,1)');
+      g.addColorStop(0.15, 'rgba(255,240,200,0.95)');
+      g.addColorStop(0.4, 'rgba(255,140,60,0.55)');
+      g.addColorStop(0.7, 'rgba(180,40,80,0.2)');
+      g.addColorStop(1.0, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    const clock = new THREE.Clock();
+    const posAttr = diskGeo.getAttribute('position');
+    const stretchPosAttr = stretchGeo.getAttribute('position');
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      const dt = clock.getDelta();
+
+      for (let i = 0; i < diskParticleCount; i++) {
+        diskAngles[i] += diskSpeeds[i] * 0.012;
+        const r = diskRadii[i];
+        const a = diskAngles[i];
+        const i3 = i * 3;
+        posAttr.array[i3] = Math.cos(a) * r;
+        posAttr.array[i3 + 2] = Math.sin(a) * r;
+        posAttr.array[i3 + 1] += Math.sin(t * 1.5 + a * 2.0) * 0.008;
+      }
+      posAttr.needsUpdate = true;
+
+      for (let i = 0; i < stretchCount; i++) {
+        stretchLife[i] += dt * stretchSpeed[i] * 0.35;
+        const life = stretchLife[i];
+        const i3 = i * 3;
+
+        if (life > 1.0) {
+          resetStretch(i);
+          continue;
+        }
+
+        const pull = Math.pow(life, 1.8);
+        const r = stretchRadius[i] * (1.0 - pull * 0.85);
+        const a = stretchAngle[i] + life * 2.8;
+        const y = stretchPos[i3 + 1] * (1.0 - pull * 0.7);
+
+        stretchPosAttr.array[i3] = Math.cos(a) * r;
+        stretchPosAttr.array[i3 + 1] = y + Math.sin(life * 8.0) * (1.0 - pull) * 0.6;
+        stretchPosAttr.array[i3 + 2] = Math.sin(a) * r;
+
+        const stretchFactor = 1.0 + pull * 4.5;
+        stretchSize[i] = (1.8 + Math.random() * 2.0) * stretchFactor * (1.0 - life * 0.6);
+      }
+      stretchPosAttr.needsUpdate = true;
+      stretchGeo.getAttribute('size').needsUpdate = true;
+
+      diskMat.uniforms.time.value = t;
+      stretchMat.uniforms.time.value = t;
+
+      photonRing.material.opacity = 0.16 + Math.sin(t * 1.8) * 0.09;
+      photonRing.rotation.z = t * 0.12;
+      photonRing2.material.opacity = 0.12 + Math.sin(t * 2.4 + 1.0) * 0.08;
+      photonRing2.rotation.z = -t * 0.18;
+
+      stars.rotation.y = t * 0.006;
+      stars.rotation.x = Math.sin(t * 0.05) * 0.02;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
