@@ -17,7 +17,7 @@ app.all("/api/ai/gemini", async (req, res) => {
       return res.status(500).json({ success: false, error: "GEMINI_API_KEY সেট করা নেই" });
     }
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+       const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
     const result = await model.generateContent(String(prompt));
     const text = result.response.text();
     return res.status(200).json({ success: true, answer: text, reply: text, result: { answer: text } });
